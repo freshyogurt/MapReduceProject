@@ -16,7 +16,7 @@ import javax.xml.transform.stream.StreamSource;
 
 import org.w3c.dom.Document;
 
-class xml2csvTask1 {
+class xml2csv {
 
     public static void main(String args[]) throws Exception {
         File stylesheet = new File(args[0]);
