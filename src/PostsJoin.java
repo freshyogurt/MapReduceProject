@@ -33,8 +33,9 @@ public class PostsJoin {
 			// Parse the input line into a string array
 			String[] line = new CSVParser().parseLine(value.toString());
 
-			// Only keep tuples whose post date are in 2008
-			SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+			// Only keep tuples whose post date are between 2009 and 2013
+			SimpleDateFormat dateFormat = new SimpleDateFormat(
+					"yyyy-MM-dd'T'HH:mm:ss.SSS");
 			Date parsedDate = null;
 			try {
 				parsedDate = dateFormat.parse(line[4]);
@@ -43,12 +44,13 @@ public class PostsJoin {
 				e.printStackTrace();
 			}
 			SimpleDateFormat df = new SimpleDateFormat("yyyy");
-			String year = df.format(parsedDate);
-			if (year.equals("2014")) {
-				if (line[1].equals("1") && !line[3].isEmpty()) {
+			String yearStr = df.format(parsedDate);
+			int year = Integer.parseInt(yearStr);
+			if (year >= 2009 && year <= 2013) {
+				if (line[1].equals("1")) {
 
-					// The foreign join key is (AcceptedAnswerId)
-					outkey.set(line[3]);
+					// For each question, the foreign join key is (Id)
+					outkey.set(line[0]);
 
 					// Flag this record for the reducer and then output
 					// attributes Id and CreationDate
@@ -57,8 +59,8 @@ public class PostsJoin {
 
 				} else if (line[1].equals("2")) {
 
-					// The foreign join key is (Id)
-					outkey.set(line[0]);
+					// For each answer, the foreign join key is (ParentID)
+					outkey.set(line[2]);
 
 					// Flag this record for the reducer and then output
 					// attributes CreationDate
@@ -73,41 +75,49 @@ public class PostsJoin {
 			Reducer<Text, Text, NullWritable, Text> {
 
 		private ArrayList<Text> listQ = new ArrayList<Text>();
-		private ArrayList<Text> listA = new ArrayList<Text>();
+		private ArrayList<Text> listA = new ArrayList<Text>();		
+		SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS");
 
 		@Override
 		public void reduce(Text key, Iterable<Text> values, Context context)
 				throws IOException, InterruptedException {
-
+			
 			// Clear our lists
 			listQ.clear();
 			listA.clear();
 
-			// iterate through all our values, binning each record based on what
+			// Iterate through all our values, binning each record based on what
 			// it was tagged with
 			// make sure to remove the tag!
+			Date minDate = null, currentDate = null;
+			String dateStr = null;
 			for (Text t : values) {
 				if (t.charAt(0) == 'Q') {
 					listQ.add(new Text(t.toString().substring(1)));
 				} else if (t.charAt(0) == 'A') {
-					listA.add(new Text(t.toString().substring(1)));
+					try {
+						currentDate = dateFormat.parse(t.toString()
+								.substring(1));
+						if(minDate == null || minDate.compareTo(currentDate) > 0) {
+							minDate = currentDate;
+							dateStr = t.toString().substring(1);
+						}
+					} catch (ParseException e) {
+						// TODO Auto-generated catch block
+						e.printStackTrace();
+					}
 				}
 			}
+			if(dateStr != null)
+				listA.add(new Text(dateStr));
 
-			// If both lists are not empty, join A with B
+			// If both lists are not empty, join Q with A
 			if (!listQ.isEmpty() && !listA.isEmpty()) {
 				for (Text Q : listQ) {
 					for (Text A : listA) {
-
-						// Filter out those join tuples where the departure time
-						// in Flight2 is not after the arrival time in Flights1.
-						// Calculate local number of flight records and local
-						// total delay.
 						String[] lineQ = new CSVParser()
 								.parseLine(Q.toString());
-						
-						SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
-						SimpleDateFormat df = new SimpleDateFormat("h");
+
 						Date parsedDate = null;
 						try {
 							parsedDate = dateFormat.parse(lineQ[1]);
@@ -117,16 +127,14 @@ public class PostsJoin {
 						}
 						long diff = 0;
 						try {
-							diff = (dateFormat.parse(A.toString()).getTime() - parsedDate.getTime())/1000;
-							if(diff < 0)
-								System.out.println(lineQ[0] + "," + A.toString() + "," + dateFormat.parse(A.toString()) + "," + lineQ[1] + "," + parsedDate.toString());
+							diff = (dateFormat.parse(A.toString()).getTime() - parsedDate
+									.getTime()) / 1000;
 						} catch (ParseException e) {
 							// TODO Auto-generated catch block
 							e.printStackTrace();
 						}
-						String hour = df.format(parsedDate);
-						context.write(null, new Text(lineQ[0] + "," + diff + "," + hour));
-						
+						context.write(null, new Text(lineQ[0] + "," + lineQ[1]
+								+ "," + diff));
 					}
 				}
 			}
@@ -145,7 +153,7 @@ public class PostsJoin {
 		Job job = new Job(conf, "Join Posts");
 
 		job.setJarByClass(PostsJoin.class);
-		job.setNumReduceTasks(10);
+//		job.setNumReduceTasks(5);
 
 		job.setMapperClass(PostsMapper.class);
 		job.setReducerClass(QAJoinReducer.class);
